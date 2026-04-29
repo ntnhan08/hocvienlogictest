@@ -13,24 +13,24 @@
       -webkit-user-select: none;
       user-select: none;
     }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       background: #2b1e10;
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: 100vh;
-      min-height: 100dvh;
       font-family: Arial, sans-serif;
-      overflow: hidden;
       touch-action: manipulation;
       background-image: radial-gradient(ellipse at center, #3e2b16 0%, #1f1308 100%);
-      margin: 0;
     }
     .canvas-container {
       position: relative;
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
+      width: 100%;
+      height: 100%;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -72,21 +72,33 @@
         const containerWidth = rect.width;
         const containerHeight = rect.height;
 
-        const targetRatio = 9 / 16;
-        let canvasWidth, canvasHeight;
-        if (containerWidth / containerHeight > targetRatio) {
-          canvasHeight = containerHeight;
-          canvasWidth = canvasHeight * targetRatio;
-        } else {
-          canvasWidth = containerWidth;
-          canvasHeight = canvasWidth / targetRatio;
-        }
+        const targetRatio = 9 / 16; // tỉ lệ canvas (dọc)
         const maxWidth = 500;
-        const maxHeight = maxWidth / targetRatio;
-        if (canvasWidth > maxWidth || canvasHeight > maxHeight) {
-          canvasWidth = maxWidth;
-          canvasHeight = maxHeight;
+        const maxHeight = maxWidth / targetRatio; // ~888
+
+        let canvasWidth, canvasHeight;
+
+        // Tính toán để canvas vừa khít container, giữ tỉ lệ và không vượt max
+        const containerRatio = containerWidth / containerHeight;
+
+        if (containerRatio > targetRatio) {
+          // Container rộng hơn tỉ lệ → ưu tiên chiều cao
+          canvasHeight = Math.min(containerHeight, maxHeight);
+          canvasWidth = canvasHeight * targetRatio;
+          if (canvasWidth > containerWidth) {
+            canvasWidth = containerWidth;
+            canvasHeight = canvasWidth / targetRatio;
+          }
+        } else {
+          // Container hẹp hơn (dọc) → ưu tiên chiều rộng
+          canvasWidth = Math.min(containerWidth, maxWidth);
+          canvasHeight = canvasWidth / targetRatio;
+          if (canvasHeight > containerHeight) {
+            canvasHeight = containerHeight;
+            canvasWidth = canvasHeight * targetRatio;
+          }
         }
+
         W = Math.round(canvasWidth);
         H = Math.round(canvasHeight);
 
@@ -98,8 +110,10 @@
 
         canvas.style.width = W + 'px';
         canvas.style.height = H + 'px';
+
         drawAll();
       }
+
       window.addEventListener('resize', resizeCanvas);
       window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 120));
 
@@ -490,7 +504,7 @@
         ctx.textBaseline = 'middle';
         ctx.fillText('L', cx, cy);
 
-        // Dòng tiêu đề chính - cỡ chữ nhỏ hơn và vị trí tinh chỉnh
+        // Dòng tiêu đề chính
         setFont(headerH*0.24, 'bold');
         ctx.fillStyle = '#e8e0c8';
         ctx.textAlign = 'left';
