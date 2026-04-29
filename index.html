@@ -73,17 +73,15 @@
         const containerHeight = rect.height;
 
         const targetRatio = 9 / 16; // tỉ lệ canvas (dọc)
-        const maxWidth = 500;
-        const maxHeight = maxWidth / targetRatio; // ~888
 
         let canvasWidth, canvasHeight;
 
-        // Tính toán để canvas vừa khít container, giữ tỉ lệ và không vượt max
+        // Tính toán để canvas vừa khít container, giữ tỉ lệ và không vượt container
         const containerRatio = containerWidth / containerHeight;
 
         if (containerRatio > targetRatio) {
           // Container rộng hơn tỉ lệ → ưu tiên chiều cao
-          canvasHeight = Math.min(containerHeight, maxHeight);
+          canvasHeight = containerHeight;
           canvasWidth = canvasHeight * targetRatio;
           if (canvasWidth > containerWidth) {
             canvasWidth = containerWidth;
@@ -91,7 +89,7 @@
           }
         } else {
           // Container hẹp hơn (dọc) → ưu tiên chiều rộng
-          canvasWidth = Math.min(containerWidth, maxWidth);
+          canvasWidth = containerWidth;
           canvasHeight = canvasWidth / targetRatio;
           if (canvasHeight > containerHeight) {
             canvasHeight = containerHeight;
