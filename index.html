@@ -1,1 +1,1102 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Học Viện Logic – Tập Trung Cao Độ</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body {
+      background: #2b1e10;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+      touch-action: manipulation;
+      background-image: radial-gradient(ellipse at center, #3e2b16 0%, #1f1308 100%);
+      margin: 0;
+    }
+    .canvas-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      border-radius: 2px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 0 0 4px #a68b5b;
+      background: #f4ecd8;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas-container" id="container">
+    <canvas id="gameCanvas" aria-label="Học Viện Logic – Phiên bản tập trung cao độ"></canvas>
+  </div>
+  <script>
+    (function() {
+      const container = document.getElementById('container');
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      let W, H;
+      let dpr = Math.min(window.devicePixelRatio || 1, 2);
 
+      // Distraction & animation
+      let distractionTimer = 0;
+      let distractionElements = [];
+      let shakeAmount = 0;
+      let noiseAlpha = 0;
+      let animFrame = 0;
+
+      function resizeCanvas() {
+        const rect = container.getBoundingClientRect();
+        const containerWidth = rect.width;
+        const containerHeight = rect.height;
+
+        const targetRatio = 9 / 16;
+        let canvasWidth, canvasHeight;
+        if (containerWidth / containerHeight > targetRatio) {
+          canvasHeight = containerHeight;
+          canvasWidth = canvasHeight * targetRatio;
+        } else {
+          canvasWidth = containerWidth;
+          canvasHeight = canvasWidth / targetRatio;
+        }
+        const maxWidth = 500;
+        const maxHeight = maxWidth / targetRatio;
+        if (canvasWidth > maxWidth || canvasHeight > maxHeight) {
+          canvasWidth = maxWidth;
+          canvasHeight = maxHeight;
+        }
+        W = Math.round(canvasWidth);
+        H = Math.round(canvasHeight);
+
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        canvas.style.width = W + 'px';
+        canvas.style.height = H + 'px';
+        drawAll();
+      }
+      window.addEventListener('resize', resizeCanvas);
+      window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 120));
+
+      // Audio
+      let audioCtx = null;
+      function initAudio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audioCtx = null; } } if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {}); }
+      function beep(f, d = 80, t = 'sine', v = 0.04) { if (!audioCtx) return; try { const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = t; o.frequency.value = f; g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d/1000); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d/1000); } catch (e) {} }
+      function playClick() { beep(520, 30, 'sine', 0.04); }
+      function playSuccess() { beep(700, 80, 'sine', 0.07); setTimeout(() => beep(900, 80, 'sine', 0.07), 70); }
+      function playError() { beep(180, 140, 'triangle', 0.08); beep(90, 200, 'sawtooth', 0.05); }
+      function playUrgent() { beep(300, 50, 'square', 0.06); }
+      function playDistraction() { beep(60 + Math.random()*50, 30, 'sawtooth', 0.02); }
+
+      function updateDistractions() {
+        const gi = parseInt(currentView.replace('game', ''));
+        if (isNaN(gi) || !g[gi]?.active) return;
+        distractionTimer++;
+        if (distractionTimer % 30 === 0) {
+          distractionElements.push({
+            x: Math.random() * W, y: Math.random() * H,
+            vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2,
+            life: 50 + Math.random() * 90,
+            char: String.fromCharCode(33 + Math.floor(Math.random() * 90)),
+            size: 8 + Math.random() * 20,
+            color: `rgba(${Math.floor(Math.random()*120)},${Math.floor(Math.random()*90)},${Math.floor(Math.random()*70)},${0.15+Math.random()*0.35})`
+          });
+          if (distractionElements.length > 12) distractionElements.shift();
+        }
+        for (let d of distractionElements) {
+          d.x += d.vx; d.y += d.vy; d.life--;
+          if (d.x < -30 || d.x > W+30) d.vx *= -1;
+          if (d.y < -30 || d.y > H+30) d.vy *= -1;
+          d.size *= 0.998;
+        }
+        distractionElements = distractionElements.filter(d => d.life > 0);
+        if (distractionTimer % 60 === 0 && Math.random() < 0.4) {
+          shakeAmount = Math.max(shakeAmount, 1.5 + Math.random()*3);
+          noiseAlpha = Math.max(noiseAlpha, 0.03 + Math.random()*0.05);
+          playDistraction();
+        }
+        shakeAmount *= 0.92;
+        noiseAlpha *= 0.88;
+        if (shakeAmount < 0.08) shakeAmount = 0;
+        if (noiseAlpha < 0.002) noiseAlpha = 0;
+      }
+
+      function drawDistractions(ctx) {
+        for (let d of distractionElements) {
+          ctx.save();
+          ctx.globalAlpha = d.life / 140;
+          ctx.fillStyle = d.color;
+          setFont(d.size, 'bold');
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(d.char, d.x, d.y);
+          ctx.restore();
+        }
+        if (noiseAlpha > 0.002) {
+          ctx.fillStyle = `rgba(20,10,5,${noiseAlpha})`;
+          for (let i = 0; i < 35; i++) {
+            ctx.fillRect(Math.random()*W, Math.random()*H, Math.random()*4+1, Math.random()*3+1);
+          }
+        }
+      }
+
+      function drawOrnateBorder() {
+        ctx.strokeStyle = '#5c4a32';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(3, 3, W - 6, H - 6);
+        ctx.strokeStyle = '#b8a56a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(8, 8, W - 16, H - 16);
+        const s = Math.min(W, H) * 0.07;
+        const corners = [
+          { x: 12, y: 12, rot: 0 }, { x: W - 12, y: 12, rot: Math.PI/2 },
+          { x: W - 12, y: H - 12, rot: Math.PI }, { x: 12, y: H - 12, rot: -Math.PI/2 }
+        ];
+        corners.forEach(c => {
+          ctx.save();
+          ctx.translate(c.x, c.y);
+          ctx.rotate(c.rot);
+          ctx.strokeStyle = '#b8a56a';
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(s*0.5, -s*0.6, s*1.1, -s*0.2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(-s*0.6, s*0.4, -s*0.2, s*1.0);
+          ctx.stroke();
+          ctx.restore();
+        });
+      }
+
+      function drawParchmentBackground() {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#fef9ee');
+        grad.addColorStop(0.4, '#f7e9cc');
+        grad.addColorStop(0.8, '#f2dfb5');
+        grad.addColorStop(1, '#e9d4a8');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        drawOrnateBorder();
+      }
+
+      function drawTopBar(title, score, level, timeLeft, totalTime) {
+        const barH = H * 0.08;
+        const pad = W * 0.05;
+        const barY = pad * 0.4;
+        ctx.fillStyle = '#3a2510';
+        ctx.strokeStyle = '#1e0f04';
+        ctx.lineWidth = 2.5;
+        roundRect(pad - 2, barY - 2, W - 2*pad + 4, barH + 4, 6, true, true);
+        ctx.fillStyle = '#1c2a1c';
+        roundRect(pad, barY, W - 2*pad, barH, 4, true, false);
+
+        setFont(barH * 0.26, 'bold');
+        ctx.fillStyle = '#e8e0c8';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(title, pad * 2.5, barY + barH * 0.32);
+
+        setFont(barH * 0.16);
+        ctx.fillStyle = '#c8c0a8';
+        ctx.fillText('Cấp ' + level + '  •  Điểm: ' + score, pad * 2.5, barY + barH * 0.68);
+
+        const barWidth = W * 0.4;
+        const barX = W - pad - barWidth - pad * 0.5;
+        const barThick = barH * 0.45;
+        const barProgressY = barY + barH/2 - barThick/2;
+        const pct = Math.max(0, timeLeft / totalTime);
+        const barColor = pct > 0.35 ? '#8ca060' : pct > 0.12 ? '#c9a030' : '#b04a40';
+        ctx.fillStyle = '#2e2a20';
+        roundRect(barX, barProgressY, barWidth, barThick, barThick*0.4, true, false);
+        ctx.fillStyle = barColor;
+        if (pct > 0.005) roundRect(barX, barProgressY, barWidth * pct, barThick, barThick*0.4, true, false);
+
+        setFont(barThick*1.0, 'bold');
+        ctx.fillStyle = '#fef9ee';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(timeLeft.toString(), barX + barWidth/2, barProgressY + barThick/2);
+
+        if (pct <= 0.22 && pct > 0) {
+          ctx.fillStyle = 'rgba(200,70,50,'+(0.25+0.2*Math.sin(Date.now()/120))+')';
+          roundRect(barX, barProgressY, barWidth * pct, barThick, barThick*0.4, true, false);
+        }
+      }
+
+      function drawBackButton() {
+        const bw = W * 0.2;
+        const bh = Math.min(H * 0.045, 30);
+        const bx = W - bw - W * 0.05;
+        const by = H - bh - H * 0.02;
+        ctx.fillStyle = '#e8d8b8';
+        ctx.strokeStyle = '#8b7a5a';
+        ctx.lineWidth = 1.5;
+        roundRect(bx, by, bw, bh, 3, true, true);
+        setFont(Math.max(10, bh * 0.42), 'bold');
+        ctx.fillStyle = '#4a3020';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('↩ Quay lại', bx + bw/2, by + bh/2);
+      }
+
+      function drawBtn(x, y, w, h, text, bgColor, borderColor, icon = '', pulse = false) {
+        const r = 3;
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 1.8;
+        roundRect(x, y, w, h, r, true, true);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        roundRect(x + 3, y + 3, w - 6, h/3, r, true, false);
+        const fontSize = Math.max(11, h * 0.40);
+        setFont(fontSize, 'bold');
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon ? icon + ' ' + text : text, x + w/2, y + h/2);
+        if (pulse) {
+          ctx.fillStyle = 'rgba(255,255,200,'+(0.2+0.15*Math.sin(Date.now()/200))+')';
+          roundRect(x, y, w, h, r, false, true);
+        }
+      }
+
+      function drawCard(x, y, w, h, title, desc, icon, hs) {
+        const r = 3;
+        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+        roundRect(x + 2, y + 2, w, h, r, true, false);
+        ctx.fillStyle = '#fef9ee';
+        ctx.strokeStyle = '#b8a070';
+        ctx.lineWidth = 1.3;
+        roundRect(x, y, w, h, r, true, true);
+
+        const iconSize = Math.min(h * 0.24, 22);
+        setFont(iconSize, '');
+        ctx.fillStyle = '#5c3a20';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon, x + w/2, y + h * 0.20);
+
+        const titleSize = Math.max(10, w * 0.10);
+        setFont(titleSize, 'bold');
+        ctx.fillStyle = '#2e1c0c';
+        ctx.fillText(title, x + w/2, y + h * 0.50);
+
+        const descSize = Math.max(8, w * 0.07);
+        setFont(descSize, '', 'italic');
+        ctx.fillStyle = '#6b5a42';
+        ctx.fillText(desc, x + w/2, y + h * 0.74);
+
+        if (hs !== undefined && hs > 0) {
+          setFont(Math.max(9, h * 0.12), 'bold');
+          ctx.fillStyle = '#b8942e';
+          ctx.textAlign = 'right';
+          ctx.fillText('★' + hs, x + w - w*0.06, y + h*0.12);
+        }
+      }
+
+      function drawOverlay(score) {
+        ctx.fillStyle = 'rgba(14,10,6,0.88)';
+        ctx.fillRect(0, 0, W, H);
+        const ow = W * 0.78;
+        const oh = H * 0.34;
+        const ox = (W - ow) / 2;
+        const oy = (H - oh) / 2;
+        ctx.fillStyle = '#fef9ee';
+        ctx.strokeStyle = '#8b7a5a';
+        ctx.lineWidth = 2.8;
+        roundRect(ox, oy, ow, oh, 6, true, true);
+
+        setFont(oh * 0.2, 'bold');
+        ctx.fillStyle = '#3e2a18';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⏳ KẾT THÚC', W/2, oy + oh * 0.22);
+
+        setFont(oh * 0.45, 'bold');
+        ctx.fillStyle = '#8b3a3a';
+        ctx.fillText(score.toString(), W/2, oy + oh * 0.5);
+
+        drawBtn(W/2 - ow*0.35, oy + oh*0.68, ow*0.7, oh*0.24, 'Thử lại', '#8b3a3a', '#5a2020', '↺');
+      }
+
+      // ─── STATE ──────────────────────────────────────
+      let currentView = 'menu';
+      let highScores = JSON.parse(localStorage.getItem('la_hs_focus_v2') || '{}');
+      function saveHS(id, s) { if (!highScores[id] || s > highScores[id]) { highScores[id] = s; localStorage.setItem('la_hs_focus_v2', JSON.stringify(highScores)); } }
+
+      const gameTimers = [8, 8, 8, 8, 8, 8, 8, 8, 8, 8];
+      let g = [];
+      for (let i = 0; i < 10; i++) g.push({
+        active: false, over: false, score: 0, level: 1, msg: '', msgC: '#6b6054',
+        interval: null, timeout: null, gameTimer: gameTimers[i], gameInterval: null
+      });
+
+      function stopAll() {
+        for (let i = 0; i < 10; i++) {
+          if (g[i].interval) clearInterval(g[i].interval);
+          if (g[i].timeout) clearTimeout(g[i].timeout);
+          if (g[i].gameInterval) clearInterval(g[i].gameInterval);
+          g[i].active = false;
+          g[i].over = false;
+        }
+        distractionElements = [];
+        shakeAmount = 0;
+        noiseAlpha = 0;
+      }
+
+      function resetGame(i) {
+        let o = g[i];
+        o.active = false; o.over = false; o.score = 0; o.level = 1;
+        o.msg = ''; o.msgC = '#6b6054'; o.gameTimer = gameTimers[i];
+        if (o.interval) clearInterval(o.interval);
+        if (o.timeout) clearTimeout(o.timeout);
+        if (o.gameInterval) clearInterval(o.gameInterval);
+        o.interval = null; o.timeout = null; o.gameInterval = null;
+        switch (i) {
+          case 0: o.base = 0; o.ops = []; o.result = 0; o.phase = 'mem'; o.timer = 1; o.showNum = 0; o.input = 0; break;
+          case 1: o.grid = Array(9).fill(false); o.target = []; o.phase = 'show'; o.timer = 1; o.selected = -1; o.question = ''; break;
+          case 2: o.word = ''; o.color = ''; o.phase = 'wait'; o.stimTimer = 0; o.waiting = false; o.correctAns = ''; break;
+          case 3: o.seq = []; o.next = 0; o.phase = 'show'; o.showIdx = 0; o.input = 0; break;
+          case 4: o.n = 2; o.history = []; o.phase = 'play'; o.pos = 0; o.letter = ''; o.posMatch = false; o.letterMatch = false; o.stimTimer = 0; o.waiting = false; break;
+          case 5: o.chain = []; o.shownResult = 0; o.correctResult = 0; o.phase = 'show'; o.showIdx = 0; o.isCorrect = true; break;
+          case 6: o.grid = Array(16).fill(0); o.phase = 'mem'; o.timer = 2; o.question = ''; o.correctAns = 0; o.choices = []; o.answered = false; break;
+          case 7: o.nums = []; o.phase = 'show'; o.timer = 1; o.target = ''; o.sorted = []; o.correctAns = 0; o.choices = []; break;
+          case 8: o.key = {}; o.encoded = []; o.decoded = 0; o.phase = 'mem'; o.timer = 2; o.showKey = true; o.input = 0; break;
+          case 9: o.subGame = 0; o.totalTimer = 8; o.phase = 'play'; o.waiting = false; o.subData = {}; o.gameTimer = 8; break;
+        }
+      }
+
+      function goToGame(i) {
+        currentView = 'game' + i;
+        stopAll();
+        initAudio();
+        resetGame(i);
+        startGameTimer(i);
+        switch (i) {
+          case 0: startGame0(); break;
+          case 1: startGame1(); break;
+          case 2: startGame2(); break;
+          case 3: startGame3(); break;
+          case 4: startGame4(); break;
+          case 5: startGame5(); break;
+          case 6: startGame6(); break;
+          case 7: startGame7(); break;
+          case 8: startGame8(); break;
+          case 9: startGame9(); break;
+        }
+        distractionTimer = 0;
+        distractionElements = [];
+        shakeAmount = 0;
+        noiseAlpha = 0;
+        drawAll();
+        playClick();
+      }
+
+      function goToMenu() {
+        currentView = 'menu';
+        stopAll();
+        drawAll();
+        playClick();
+      }
+
+      function startGameTimer(i) {
+        let o = g[i];
+        if (o.gameInterval) clearInterval(o.gameInterval);
+        o.gameInterval = setInterval(() => {
+          updateDistractions();
+          if (o.gameTimer > 0 && o.active && !o.over) {
+            o.gameTimer--;
+            if (o.gameTimer <= 3 && o.gameTimer > 0) playUrgent();
+            drawAll();
+          } else if (o.gameTimer <= 0 && o.active && !o.over) {
+            o.over = true;
+            o.active = false;
+            if (o.interval) clearInterval(o.interval);
+            if (o.timeout) clearTimeout(o.timeout);
+            saveHS(i, o.score);
+            drawAll();
+            playError();
+          }
+        }, 1000);
+      }
+
+      function rewardCorrect(i) {
+        let o = g[i];
+        o.gameTimer = 8;
+        if (i === 9) o.totalTimer = 8;
+        if (o.timeout) { clearTimeout(o.timeout); o.timeout = null; }
+      }
+
+      const gameInfo = [
+        { name: 'Memory Math', desc: 'Nhớ số, tính nhẩm', icon: 'M' },
+        { name: 'Pattern Matrix', desc: 'Ghi nhớ ô mẫu', icon: '◈' },
+        { name: 'Stroop', desc: 'Màu sắc xung đột', icon: '▣' },
+        { name: 'Sequence', desc: 'Dãy số logic', icon: '⇉' },
+        { name: 'Dual N-Back', desc: 'Vị trí & chữ cái', icon: '◫' },
+        { name: 'Chain Math', desc: 'Chuỗi phép tính', icon: '↯' },
+        { name: 'Grid Recall', desc: 'Nhớ lưới số', icon: '▦' },
+        { name: 'Speed Sort', desc: 'Sắp xếp nhanh', icon: '»' },
+        { name: 'Code Breaker', desc: 'Giải mã ký hiệu', icon: '⚿' },
+        { name: 'Quick Switch', desc: 'Luân chuyển nhanh', icon: '↻' }
+      ];
+
+      // ─── MENU ──────────────────────────────────────
+      function drawMenu() {
+        drawParchmentBackground();
+        const headerH = H * 0.13;
+        const pad = W * 0.05;
+        ctx.fillStyle = '#1c2a1c';
+        roundRect(pad, pad*0.5, W - 2*pad, headerH, 5, true, false);
+        const r = headerH * 0.42;
+        const cx = pad + r * 1.8;
+        const cy = pad*0.5 + headerH*0.5;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI*2);
+        ctx.fillStyle = '#f4ecd8';
+        ctx.fill();
+        ctx.strokeStyle = '#b8a56a';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        setFont(r*1.2, 'bold');
+        ctx.fillStyle = '#8b3a3a';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('L', cx, cy);
+
+        // Dòng tiêu đề chính - cỡ chữ nhỏ hơn và vị trí tinh chỉnh
+        setFont(headerH*0.24, 'bold');
+        ctx.fillStyle = '#e8e0c8';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('HỌC VIỆN LOGIC', cx + r*1.9, cy - headerH*0.13);
+
+        // Dòng mô tả
+        setFont(headerH*0.14, '', 'italic');
+        ctx.fillStyle = '#c8c0a8';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Tập trung tuyệt đối – 8 giây', cx + r*1.9, cy + headerH*0.12);
+
+        const cols = 2, m = W*0.05, gap = W*0.022, rows = 5;
+        const startY = H*0.18;
+        const availableHeight = H - startY - H*0.1;
+        const cw = (W - 2*m - gap) / cols;
+        const ch = (availableHeight - (rows-1)*gap) / rows;
+        for (let i = 0; i < 10; i++) {
+          const col = i % cols, row = Math.floor(i / cols);
+          drawCard(m + col*(cw+gap), startY + row*(ch+gap), cw, ch, gameInfo[i].name, gameInfo[i].desc, gameInfo[i].icon, highScores[i]);
+        }
+      }
+
+      // ─── NUMERIC KEYPAD ────────────────────────────
+      function drawNumPad(m, iw, y, nph) {
+        const nps = (iw - W*0.08) / 3;
+        for (let r = 0; r < 4; r++) {
+          for (let c = 0; c < 3; c++) {
+            const num = r * 3 + c + 1;
+            if (num > 9) continue;
+            const nx = m + c * (nps + W*0.04);
+            const ny = y + r * (nph + H*0.012);
+            ctx.fillStyle = '#f5f0e0';
+            ctx.strokeStyle = '#8b7a5a';
+            ctx.lineWidth = 1;
+            roundRect(nx, ny, nps, nph, 3, true, true);
+            setFont(nph*0.42, 'bold');
+            ctx.fillStyle = '#2e1c0c';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(num.toString(), nx + nps/2, ny + nph/2);
+          }
+        }
+        const zy = y + 4 * (nph + H*0.012);
+        const nps2 = (iw - W*0.08) / 3;
+        roundRect(m, zy, nps2, nph, 3, true, true);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('0', m + nps2/2, zy + nph/2);
+        const cx2 = m + nps2 + W*0.04;
+        const cw3 = 2*nps2 + W*0.04;
+        roundRect(cx2, zy, cw3, nph, 3, true, true);
+        ctx.fillText('⌫', cx2 + cw3/2, zy + nph/2);
+        const oky = zy + nph + H*0.015;
+        ctx.fillStyle = '#5a7340';
+        ctx.strokeStyle = '#3a4d20';
+        ctx.lineWidth = 1.5;
+        roundRect(m, oky, iw, H*0.065, 3, true, true);
+        ctx.fillStyle = '#fff';
+        setFont(H*0.032, 'bold');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('XÁC NHẬN', m + iw/2, oky + H*0.032);
+        return oky;
+      }
+
+      function handleNumPadInput(x, y, o, m, iw, npy, nph) {
+        const nps = (iw - W*0.08) / 3;
+        for (let r = 0; r < 4; r++) {
+          for (let c = 0; c < 3; c++) {
+            const num = r * 3 + c + 1;
+            if (num > 9) continue;
+            const nx = m + c * (nps + W*0.04);
+            const ny = npy + r * (nph + H*0.012);
+            if (x > nx && x < nx + nps && y > ny && y < ny + nph) {
+              o.input = o.input * 10 + num;
+              drawAll(); playClick();
+              return true;
+            }
+          }
+        }
+        const zy = npy + 4 * (nph + H*0.012);
+        const nps2 = (iw - W*0.08) / 3;
+        if (x > m && x < m + nps2 && y > zy && y < zy + nph) { o.input = o.input * 10; drawAll(); playClick(); return true; }
+        if (x > m + nps2 + W*0.04 && x < m + nps2 + W*0.04 + 2*nps2 + W*0.04 && y > zy && y < zy + nph) { o.input = Math.floor(o.input / 10); drawAll(); playClick(); return true; }
+        const oky = zy + nph + H*0.015;
+        if (x > m && x < m + iw && y > oky && y < oky + H*0.065) { return { submit: true }; }
+        return false;
+      }
+
+      // ─── GAME 0: MEMORY MATH ────────────────────────
+      function startGame0() { let o = g[0]; o.active = true; o.over = false; o.gameTimer = 8; newRound0(); }
+      function newRound0() { let o = g[0]; o.base = Math.floor(Math.random() * 20) + 5; o.ops = []; let val = o.base; const count = 3; for (let i = 0; i < count; i++) { const op = ['+', '-', '×'][Math.floor(Math.random() * 3)]; let n = Math.floor(Math.random() * 9) + 2; o.ops.push({ op, n }); if (op === '+') val += n; else if (op === '-') val -= n; else val *= n; } o.result = val; o.phase = 'mem'; o.timer = 1; o.showNum = o.base; o.input = 0; if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.timer--; if (o.timer <= 0 && o.phase === 'mem') { o.phase = 'ops'; o.timer = 1; } else if (o.timer <= 0 && o.phase === 'ops') { o.phase = 'input'; clearInterval(o.interval); } drawAll(); }, 1000); }
+      function drawGame0() {
+        drawParchmentBackground();
+        let o = g[0];
+        drawTopBar('Memory Math', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.12;
+        if (o.phase === 'mem') {
+          setFont(W*0.13, 'bold'); ctx.fillStyle = '#8b3a3a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.showNum.toString(), W/2, y + H*0.1);
+          setFont(W*0.034, '', 'italic'); ctx.fillStyle = '#6b6054';
+          ctx.fillText('Ghi nhớ! ' + o.timer + 's', W/2, y + H*0.2);
+        } else if (o.phase === 'ops') {
+          setFont(W*0.044, 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Tính nhẩm:', W/2, y + H*0.03);
+          setFont(W*0.046, 'bold'); ctx.fillStyle = '#5a7340';
+          let tx = o.base + ''; for (let op of o.ops) tx += ' ' + op.op + ' ' + op.n; ctx.fillText(tx, W/2, y + H*0.13);
+        } else if (o.phase === 'input') {
+          setFont(W*0.044, 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Kết quả?', W/2, y);
+          setFont(W*0.10, 'bold'); ctx.fillStyle = '#8b3a3a';
+          ctx.fillText(o.input || '___', W/2, y + H*0.1);
+          drawNumPad(m, iw, y + H*0.18, Math.min(H*0.058, 42));
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame0(x, y) {
+        let o = g[0], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(0); goToGame(0); return; } return; }
+        if (o.phase === 'input') {
+          const npy = H*0.12 + H*0.18;
+          const result = handleNumPadInput(x, y, o, m, iw, npy, Math.min(H*0.058, 42));
+          if (result === true) return;
+          if (result && result.submit) {
+            if (o.input === o.result) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 5 === 0) o.level++; saveHS(0, o.score); playSuccess(); rewardCorrect(0); newRound0(); }
+            else { o.msg = '✗ ' + o.result; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+            drawAll();
+          }
+        }
+      }
+
+      // ─── GAME 1: PATTERN MATRIX ─────────────────────
+      function startGame1() { let o = g[1]; o.active = true; o.over = false; o.gameTimer = 8; newRound1(); }
+      function newRound1() { let o = g[1]; o.grid = Array(9).fill(false); const count = 4; o.target = []; while (o.target.length < count) { let idx = Math.floor(Math.random() * 9); if (!o.target.includes(idx)) o.target.push(idx); } o.target.forEach(i => o.grid[i] = true); o.phase = 'show'; o.timer = 1; o.selected = -1; o.question = 'Ô nào đã sáng?'; if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.timer--; if (o.timer <= 0) { o.phase = 'guess'; o.grid = Array(9).fill(false); clearInterval(o.interval); } drawAll(); }, 1000); }
+      function drawGame1() {
+        drawParchmentBackground();
+        let o = g[1];
+        drawTopBar('Pattern Matrix', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, gap = W*0.03, ps = (W - 2*m - 2*gap)/3, gy = H*0.13;
+        for (let i = 0; i < 9; i++) {
+          let col = i%3, row = Math.floor(i/3), px = m + col*(ps+gap), py = gy + row*(ps+gap);
+          ctx.fillStyle = o.grid[i] ? '#e7c85e' : '#f5f0e0';
+          ctx.strokeStyle = '#8b7a5a'; ctx.lineWidth = 1.3;
+          roundRect(px, py, ps, ps, 3, true, true);
+          if (o.phase === 'guess' && o.selected === i) { ctx.strokeStyle = '#8b3a3a'; ctx.lineWidth = 2.8; roundRect(px, py, ps, ps, 3, false, true); }
+        }
+        let qy = gy + 3*(ps+gap) + H*0.03;
+        setFont(W*0.034, 'bold', 'italic'); ctx.fillStyle = '#6b6054'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(o.phase==='show' ? 'Ghi nhớ! '+o.timer+'s' : o.question, W/2, qy);
+        if (o.msg) { setFont(W*0.034, 'bold'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, qy + H*0.04); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame1(x, y) {
+        let o = g[1], m = W*0.06, gap = W*0.03, ps = (W-2*m-2*gap)/3, gy = H*0.13;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(1); goToGame(1); return; } return; }
+        if (o.phase === 'guess') {
+          for (let i = 0; i < 9; i++) {
+            let col = i%3, row = Math.floor(i/3), px = m + col*(ps+gap), py = gy + row*(ps+gap);
+            if (x > px && x < px+ps && y > py && y < py+ps) {
+              o.selected = i;
+              if (o.target.includes(i)) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 6 === 0) o.level++; saveHS(1, o.score); playSuccess(); rewardCorrect(1); newRound1(); }
+              else { o.msg = '✗ Sai!'; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+              drawAll(); return;
+            }
+          }
+        }
+      }
+
+      // ─── GAME 2: STROOP ─────────────────────────────
+      function startGame2() { let o = g[2]; o.active = true; o.over = false; o.gameTimer = 8; newStim2(); }
+      function newStim2() { let o = g[2]; const words = ['ĐỎ', 'XANH', 'VÀNG', 'LÁ']; const colors = ['#d94a4a', '#3b6fb6', '#e0a82b', '#3b8c5a']; let ci = Math.floor(Math.random() * 4), wi = Math.floor(Math.random() * 4); if (Math.random() < 0.5) wi = ci; else while (wi === ci) wi = Math.floor(Math.random() * 4); o.word = words[wi]; o.color = colors[ci]; o.correctAns = colors[ci]; o.waiting = true; if (o.timeout) clearTimeout(o.timeout); o.timeout = setTimeout(() => { if (o.waiting && o.active) { o.msg = '⏰ Chậm!'; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.timeout) clearTimeout(o.timeout); if (o.gameInterval) clearInterval(o.gameInterval); drawAll(); playError(); } }, 1200); }
+      function drawGame2() {
+        drawParchmentBackground();
+        let o = g[2];
+        drawTopBar('Stroop', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.14;
+        if (o.waiting && o.active) {
+          setFont(W*0.12, 'bold'); ctx.fillStyle = o.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.word, W/2, y + H*0.06);
+          setFont(W*0.036, '', 'italic'); ctx.fillStyle = '#6b6054';
+          ctx.fillText('Chọn MÀU MỰC của chữ', W/2, y + H*0.16);
+        }
+        if (o.active && o.waiting) {
+          const cols = ['#d94a4a', '#3b6fb6', '#e0a82b', '#3b8c5a'];
+          const bw2 = (iw - W*0.08)/4, bh2 = H*0.08, by2 = y + H*0.2;
+          cols.forEach((c, i) => {
+            let bx = m + i*(bw2 + W*0.027);
+            ctx.fillStyle = c; ctx.strokeStyle = '#3b2f2f'; ctx.lineWidth = 1.2;
+            roundRect(bx, by2, bw2, bh2, 3, true, true);
+          });
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame2(x, y) {
+        let o = g[2], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(2); goToGame(2); return; } return; }
+        if (o.waiting && o.active) {
+          const cols = ['#d94a4a', '#3b6fb6', '#e0a82b', '#3b8c5a'];
+          const bw2 = (iw - W*0.08)/4, bh2 = H*0.08, by2 = H*0.14 + H*0.2;
+          for (let i = 0; i < 4; i++) {
+            let bx = m + i*(bw2 + W*0.027);
+            if (x > bx && x < bx + bw2 && y > by2 && y < by2 + bh2) {
+              if (cols[i] === o.correctAns) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 6 === 0) o.level++; saveHS(2, o.score); playSuccess(); rewardCorrect(2); o.waiting = false; if (o.timeout) clearTimeout(o.timeout); newStim2(); }
+              else { o.msg = '✗ Sai!'; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.timeout) clearTimeout(o.timeout); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+              drawAll(); return;
+            }
+          }
+        }
+      }
+
+      // ─── GAME 3: SEQUENCE ───────────────────────────
+      function startGame3() { let o = g[3]; o.active = true; o.over = false; o.gameTimer = 8; newSeq3(); }
+      function newSeq3() { let o = g[3]; const types = ['add', 'mul', 'fib']; const t = types[Math.floor(Math.random() * 3)]; let seq = []; if (t === 'add') { let start = Math.floor(Math.random() * 10) + 5, step = Math.floor(Math.random() * 5) + 2; for (let i = 0; i < 4; i++) seq.push(start + i * step); o.next = seq[3] + step; } else if (t === 'mul') { let start = Math.floor(Math.random() * 3) + 2, mult = 2; for (let i = 0; i < 4; i++) seq.push(start * Math.pow(mult, i)); o.next = seq[3] * mult; } else { seq = [1, 1]; for (let i = 2; i < 5; i++) seq.push(seq[i-1] + seq[i-2]); o.next = seq[3] + seq[2]; } o.seq = seq; o.phase = 'show'; o.showIdx = 0; o.input = 0; if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.showIdx++; if (o.showIdx >= o.seq.length) { o.phase = 'input'; clearInterval(o.interval); } drawAll(); }, 400); }
+      function drawGame3() {
+        drawParchmentBackground();
+        let o = g[3];
+        drawTopBar('Sequence', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.13;
+        setFont(W*0.066, 'bold'); ctx.fillStyle = '#5a7340'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        let txt = ''; for (let i = 0; i <= Math.min(o.showIdx, o.seq.length-1); i++) txt += o.seq[i] + '  '; txt += '?';
+        ctx.fillText(txt, W/2, y + H*0.03);
+        if (o.phase === 'input') {
+          setFont(W*0.095, 'bold'); ctx.fillStyle = '#8b3a3a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.input || '___', W/2, y + H*0.11);
+          drawNumPad(m, iw, y + H*0.19, Math.min(H*0.058, 40));
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame3(x, y) {
+        let o = g[3], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(3); goToGame(3); return; } return; }
+        if (o.phase === 'input') {
+          const npy = H*0.13 + H*0.19;
+          const result = handleNumPadInput(x, y, o, m, iw, npy, Math.min(H*0.058, 40));
+          if (result === true) return;
+          if (result && result.submit) {
+            if (o.input === o.next) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 5 === 0) o.level++; saveHS(3, o.score); playSuccess(); rewardCorrect(3); newSeq3(); }
+            else { o.msg = '✗ ' + o.next; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+            drawAll();
+          }
+        }
+      }
+
+      // ─── GAME 4: DUAL N-BACK ────────────────────────
+      function startGame4() { let o = g[4]; o.active = true; o.over = false; o.gameTimer = 8; newTrial4(); }
+      function newTrial4() { let o = g[4]; o.pos = Math.floor(Math.random() * 9); o.letter = String.fromCharCode(65 + Math.floor(Math.random() * 10)); o.history.push({ pos: o.pos, letter: o.letter }); o.posMatch = o.history.length > o.n && o.history[o.history.length - 1 - o.n].pos === o.pos; o.letterMatch = o.history.length > o.n && o.history[o.history.length - 1 - o.n].letter === o.letter; o.waiting = true; if (o.timeout) clearTimeout(o.timeout); o.timeout = setTimeout(() => { if (o.waiting && o.active) { o.msg = '⏰ Chậm!'; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.timeout) clearTimeout(o.timeout); if (o.gameInterval) clearInterval(o.gameInterval); drawAll(); playError(); } }, 1200); }
+      function drawGame4() {
+        drawParchmentBackground();
+        let o = g[4];
+        drawTopBar('Dual N-Back', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.13;
+        setFont(W*0.030, 'bold'); ctx.fillStyle = '#6b6054'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('N = ' + o.n, W/2, y);
+        y += H*0.025;
+        if (o.active && o.waiting) {
+          const gs = (iw - W*0.04)/3, gap4 = W*0.02, gy2 = y;
+          for (let i = 0; i < 9; i++) {
+            let col = i%3, row = Math.floor(i/3), px = m + col*(gs+gap4), py = gy2 + row*(gs+gap4);
+            ctx.fillStyle = i === o.pos ? '#e7c85e' : '#f5f0e0'; ctx.strokeStyle = '#8b7a5a'; ctx.lineWidth = 1.3;
+            roundRect(px, py, gs, gs, 3, true, true);
+          }
+          setFont(W*0.085, 'bold'); ctx.fillStyle = '#8b3a3a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.letter, W/2, gy2 + 3*(gs+gap4) + H*0.04);
+          const btny2 = gy2 + 3*(gs+gap4) + H*0.08;
+          drawBtn(m, btny2, (iw - W*0.03)/2, H*0.065, 'Vị trí', o.posMatch ? '#5a7340' : '#8b3a3a', '#3a4d20', 'P');
+          drawBtn(m + (iw - W*0.03)/2 + W*0.03, btny2, (iw - W*0.03)/2, H*0.065, 'Chữ', o.letterMatch ? '#5a7340' : '#8b3a3a', '#3a4d20', 'A');
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame4(x, y) {
+        let o = g[4], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(4); goToGame(4); return; } return; }
+        if (o.waiting && o.active) {
+          const gs = (iw - W*0.04)/3, gap4 = W*0.02, gy3 = H*0.13 + H*0.025;
+          const btny3 = gy3 + 3*(gs+gap4) + H*0.08;
+          const checkAnswer = (isPos) => {
+            const match = isPos ? o.posMatch : o.letterMatch;
+            if (match) { o.score++; o.msg = '✓'; o.msgC = '#5a7340'; playSuccess(); rewardCorrect(4); if (o.score % 6 === 0 && o.score > 0) o.level++; saveHS(4, o.score); }
+            else { o.msg = '✗'; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.timeout) clearTimeout(o.timeout); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+            o.waiting = false; if (o.timeout) clearTimeout(o.timeout);
+            if (!o.over) newTrial4();
+            drawAll();
+          };
+          if (x > m && x < m + (iw - W*0.03)/2 && y > btny3 && y < btny3 + H*0.065) { checkAnswer(true); return; }
+          if (x > m + (iw - W*0.03)/2 + W*0.03 && x < m + iw && y > btny3 && y < btny3 + H*0.065) { checkAnswer(false); return; }
+        }
+      }
+
+      // ─── GAME 5: CHAIN MATH ─────────────────────────
+      function startGame5() { let o = g[5]; o.active = true; o.over = false; o.gameTimer = 8; newChain5(); }
+      function newChain5() { let o = g[5]; let val = Math.floor(Math.random() * 15) + 5; o.chain = [{ op: 'start', n: val }]; const count = 3; for (let i = 0; i < count; i++) { const op = ['+', '-', '×'][Math.floor(Math.random() * 3)]; let n = Math.floor(Math.random() * 9) + 2; o.chain.push({ op, n }); if (op === '+') val += n; else if (op === '-') val -= n; else val *= n; } o.correctResult = val; o.isCorrect = Math.random() < 0.5; o.shownResult = o.isCorrect ? o.correctResult : o.correctResult + (Math.random() < 0.5 ? 1 : -1) * (Math.floor(Math.random() * 5) + 1); if (o.shownResult === o.correctResult || o.shownResult < 0) o.shownResult = o.correctResult + 3; o.phase = 'show'; o.showIdx = 0; if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.showIdx++; if (o.showIdx >= o.chain.length) { o.phase = 'judge'; clearInterval(o.interval); } drawAll(); }, 300); }
+      function drawGame5() {
+        drawParchmentBackground();
+        let o = g[5];
+        drawTopBar('Chain Math', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.13;
+        if (o.phase === 'show') {
+          let txt2 = ''; for (let i = 0; i <= Math.min(o.showIdx, o.chain.length-1); i++) { if (o.chain[i].op === 'start') txt2 += o.chain[i].n; else txt2 += ' ' + o.chain[i].op + ' ' + o.chain[i].n; }
+          setFont(W*0.058, 'bold'); ctx.fillStyle = '#5a7340'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(txt2, W/2, y + H*0.05);
+        } else if (o.phase === 'judge') {
+          setFont(W*0.056, 'bold'); ctx.fillStyle = '#5a7340'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          let txt3 = ''; for (let c of o.chain) txt3 += (c.op === 'start' ? c.n : ' ' + c.op + ' ' + c.n);
+          ctx.fillText(txt3 + ' = ' + o.shownResult, W/2, y + H*0.03);
+          setFont(W*0.042, 'bold'); ctx.fillStyle = '#2e1c0c';
+          ctx.fillText('Đúng hay Sai?', W/2, y + H*0.12);
+          const bw4 = (iw - W*0.04)/2, bh4 = H*0.08;
+          drawBtn(m, y + H*0.2, bw4, bh4, 'ĐÚNG', '#5a7340', '#3a4d20', '✓');
+          drawBtn(m + bw4 + W*0.04, y + H*0.2, bw4, bh4, 'SAI', '#8b3a3a', '#5a2020', '✗');
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame5(x, y) {
+        let o = g[5], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(5); goToGame(5); return; } return; }
+        if (o.phase === 'judge') {
+          const bw5 = (iw - W*0.04)/2, bh5 = H*0.08, jy = H*0.13 + H*0.2;
+          const judge = (expected) => {
+            if ((expected && o.isCorrect) || (!expected && !o.isCorrect)) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; playSuccess(); rewardCorrect(5); if (o.score % 5 === 0) o.level++; saveHS(5, o.score); newChain5(); }
+            else { o.msg = '✗ Sai!'; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+            drawAll();
+          };
+          if (x > m && x < m + bw5 && y > jy && y < jy + bh5) { judge(true); return; }
+          if (x > m + bw5 + W*0.04 && x < m + iw && y > jy && y < jy + bh5) { judge(false); return; }
+        }
+      }
+
+      // ─── GAME 6: GRID RECALL ────────────────────────
+      function startGame6() { let o = g[6]; o.active = true; o.over = false; o.gameTimer = 8; newGrid6(); }
+      function newGrid6() { let o = g[6]; o.grid = Array(16).fill(0).map(() => Math.floor(Math.random() * 20) + 1); o.phase = 'mem'; o.timer = 2; o.answered = false; const qtypes = ['sumRow', 'maxCol', 'minAll']; const qt = qtypes[Math.floor(Math.random() * 3)]; if (qt === 'sumRow') { const row = Math.floor(Math.random() * 4); o.correctAns = 0; for (let c = 0; c < 4; c++) o.correctAns += o.grid[row * 4 + c]; o.question = 'Tổng hàng ' + (row + 1) + '?'; } else if (qt === 'maxCol') { const col = Math.floor(Math.random() * 4); o.correctAns = -1; for (let r = 0; r < 4; r++) o.correctAns = Math.max(o.correctAns, o.grid[r * 4 + col]); o.question = 'Max cột ' + (col + 1) + '?'; } else { o.correctAns = Math.min(...o.grid); o.question = 'Nhỏ nhất?'; } let choices = [o.correctAns]; while (choices.length < 4) { const w = o.correctAns + (Math.floor(Math.random() * 8) - 4); if (w > 0 && !choices.includes(w)) choices.push(w); } o.choices = choices.sort(() => Math.random() - 0.5); if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.timer--; if (o.timer <= 0) { o.phase = 'guess'; clearInterval(o.interval); } drawAll(); }, 1000); }
+      function drawGame6() {
+        drawParchmentBackground();
+        let o = g[6];
+        drawTopBar('Grid Recall', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.04, iw = W-2*m, y = H*0.11;
+        const cs = (iw - W*0.03)/4, gap6 = W*0.01;
+        for (let i = 0; i < 16; i++) {
+          let col = i%4, row = Math.floor(i/4), px = m + col*(cs+gap6), py = y + row*(cs+gap6);
+          ctx.fillStyle = o.phase === 'mem' ? '#f5f0e0' : '#faf5e8'; ctx.strokeStyle = '#8b7a5a'; ctx.lineWidth = 1;
+          roundRect(px, py, cs, cs, 3, true, true);
+          if (o.phase === 'mem') {
+            setFont(Math.max(10, cs*0.42), 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(o.grid[i].toString(), px + cs/2, py + cs/2);
+          }
+        }
+        y += 4*(cs+gap6) + H*0.02;
+        if (o.phase === 'mem') {
+          setFont(W*0.034, '', 'italic'); ctx.fillStyle = '#6b6054'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Ghi nhớ lưới! ' + o.timer + 's', W/2, y);
+        } else if (o.phase === 'guess') {
+          setFont(W*0.044, 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.question, W/2, y);
+          y += H*0.04;
+          const cw6 = (iw - W*0.03)/4, ch6 = H*0.07;
+          for (let i = 0; i < 4; i++) {
+            drawBtn(m + i*(cw6 + W*0.01), y, cw6, ch6, o.choices[i] + '', '#5a7340', '#3a4d20');
+          }
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame6(x, y) {
+        let o = g[6], m = W*0.04, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(6); goToGame(6); return; } return; }
+        if (o.phase === 'guess' && !o.answered) {
+          const cs = (iw - W*0.03)/4, gap6 = W*0.01, gy4 = H*0.11 + 4*(cs+gap6) + H*0.02 + H*0.04;
+          const cw6 = (iw - W*0.03)/4, ch6 = H*0.07;
+          for (let i = 0; i < 4; i++) {
+            const cx = m + i*(cw6 + W*0.01);
+            if (x > cx && x < cx + cw6 && y > gy4 && y < gy4 + ch6) {
+              o.answered = true;
+              if (o.choices[i] === o.correctAns) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 5 === 0) o.level++; saveHS(6, o.score); playSuccess(); rewardCorrect(6); newGrid6(); }
+              else { o.msg = '✗ ' + o.correctAns; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+              drawAll(); return;
+            }
+          }
+        }
+      }
+
+      // ─── GAME 7: SPEED SORT ─────────────────────────
+      function startGame7() { let o = g[7]; o.active = true; o.over = false; o.gameTimer = 8; newSort7(); }
+      function newSort7() { let o = g[7]; const count = 5; o.nums = []; for (let i = 0; i < count; i++) o.nums.push(Math.floor(Math.random() * 40) + 1); o.sorted = [...o.nums].sort((a, b) => a - b); const tasks = ['median', '2nd', 'max', 'min']; const task = tasks[Math.floor(Math.random() * 4)]; if (task === 'median') { o.correctAns = o.sorted[2]; o.target = 'Trung vị'; } else if (task === '2nd') { o.correctAns = o.sorted[1]; o.target = 'Nhỏ thứ 2'; } else if (task === 'max') { o.correctAns = o.sorted[4]; o.target = 'Lớn nhất'; } else { o.correctAns = o.sorted[0]; o.target = 'Nhỏ nhất'; } let choices = [o.correctAns]; while (choices.length < 4) { const w = o.correctAns + (Math.floor(Math.random() * 10) - 5); if (w > 0 && !choices.includes(w)) choices.push(w); } o.choices = choices.sort(() => Math.random() - 0.5); o.phase = 'show'; o.timer = 1; if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.timer--; if (o.timer <= 0) { o.phase = 'guess'; clearInterval(o.interval); } drawAll(); }, 1000); }
+      function drawGame7() {
+        drawParchmentBackground();
+        let o = g[7];
+        drawTopBar('Speed Sort', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.13;
+        setFont(W*0.048, 'bold'); ctx.fillStyle = '#5a7340'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(o.nums.join('  '), W/2, y + H*0.02);
+        if (o.phase === 'show') { setFont(W*0.036, '', 'italic'); ctx.fillStyle = '#6b6054'; ctx.fillText('Sắp xếp! ' + o.timer + 's', W/2, y + H*0.11); }
+        else if (o.phase === 'guess') {
+          setFont(W*0.046, 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.fillText('Tìm: ' + o.target, W/2, y + H*0.1);
+          const cw8 = (iw - W*0.06)/2, ch8 = H*0.08, gy5 = y + H*0.16;
+          for (let i = 0; i < 4; i++) { let col = i%2, row = Math.floor(i/2); drawBtn(m + col*(cw8 + W*0.06), gy5 + row*(ch8 + H*0.025), cw8, ch8, o.choices[i] + '', '#5a7340', '#3a4d20'); }
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame7(x, y) {
+        let o = g[7], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(7); goToGame(7); return; } return; }
+        if (o.phase === 'guess') {
+          const cw8 = (iw - W*0.06)/2, ch8 = H*0.08, gy5 = H*0.13 + H*0.16;
+          for (let i = 0; i < 4; i++) {
+            let col = i%2, row = Math.floor(i/2);
+            const cx = m + col*(cw8 + W*0.06), cy = gy5 + row*(ch8 + H*0.025);
+            if (x > cx && x < cx + cw8 && y > cy && y < cy + ch8) {
+              if (o.choices[i] === o.correctAns) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 5 === 0) o.level++; saveHS(7, o.score); playSuccess(); rewardCorrect(7); newSort7(); }
+              else { o.msg = '✗ ' + o.correctAns; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+              drawAll(); return;
+            }
+          }
+        }
+      }
+
+      // ─── GAME 8: CODE BREAKER ───────────────────────
+      function startGame8() { let o = g[8]; o.active = true; o.over = false; o.gameTimer = 8; newCode8(); }
+      function newCode8() { let o = g[8]; const symbols = ['●', '■', '▲', '★']; o.key = {}; const count = 3; for (let i = 0; i < count; i++) o.key[symbols[i]] = Math.floor(Math.random() * 10) + 1; o.encoded = []; let sum = 0; const len = 3; for (let i = 0; i < len; i++) { const sym = Object.keys(o.key)[Math.floor(Math.random() * Object.keys(o.key).length)]; o.encoded.push(sym); sum += o.key[sym]; } o.decoded = sum; o.phase = 'mem'; o.timer = 2; o.showKey = true; o.input = 0; if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.timer--; if (o.timer <= 0) { o.phase = 'input'; o.showKey = false; clearInterval(o.interval); } drawAll(); }, 1000); }
+      function drawGame8() {
+        drawParchmentBackground();
+        let o = g[8];
+        drawTopBar('Code Breaker', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.12;
+        if (o.showKey) {
+          setFont(W*0.032, 'bold'); ctx.fillStyle = '#6b6054'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Bảng mã:', W/2, y);
+          y += H*0.035;
+          const keys = Object.keys(o.key); const keySpace = Math.min(W*0.24, iw / keys.length);
+          keys.forEach((k, i) => {
+            setFont(W*0.044, 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(k + '=' + o.key[k], m + i * keySpace + keySpace/2, y);
+          });
+          y += H*0.05;
+          setFont(W*0.062, 'bold'); ctx.fillStyle = '#8b3a3a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.encoded.join(' + '), W/2, y);
+          y += H*0.04;
+          setFont(W*0.036, '', 'italic'); ctx.fillStyle = '#6b6054';
+          ctx.fillText('Ghi nhớ! ' + o.timer + 's', W/2, y);
+        } else if (o.phase === 'input') {
+          setFont(W*0.050, 'bold'); ctx.fillStyle = '#2e1c0c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.encoded.join(' + ') + ' = ?', W/2, y);
+          y += H*0.06;
+          setFont(W*0.10, 'bold'); ctx.fillStyle = '#8b3a3a';
+          ctx.fillText(o.input || '___', W/2, y);
+          y += H*0.035;
+          drawNumPad(m, iw, y, Math.min(H*0.058, 40));
+        }
+        if (o.msg) { setFont(W*0.032, 'bold', 'italic'); ctx.fillStyle = o.msgC; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.msg, W/2, H - H*0.11); }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame8(x, y) {
+        let o = g[8], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(8); goToGame(8); return; } return; }
+        if (o.phase === 'input' && !o.showKey) {
+          const inpy = H*0.12 + H*0.06 + H*0.035;
+          const result = handleNumPadInput(x, y, o, m, iw, inpy, Math.min(H*0.058, 40));
+          if (result === true) return;
+          if (result && result.submit) {
+            if (o.input === o.decoded) { o.score++; o.msg = '✓ Đúng!'; o.msgC = '#5a7340'; if (o.score % 4 === 0) o.level++; saveHS(8, o.score); playSuccess(); rewardCorrect(8); newCode8(); }
+            else { o.msg = '✗ ' + o.decoded; o.msgC = '#8b3a3a'; o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.gameInterval) clearInterval(o.gameInterval); playError(); }
+            drawAll();
+          }
+        }
+      }
+
+      // ─── GAME 9: QUICK SWITCH ───────────────────────
+      function startGame9() { let o = g[9]; o.active = true; o.over = false; o.totalTimer = 8; o.gameTimer = 8; o.subGame = Math.floor(Math.random() * 3); initSub9(); if (o.interval) clearInterval(o.interval); o.interval = setInterval(() => { o.totalTimer--; o.gameTimer--; if (o.totalTimer <= 0) { o.over = true; o.active = false; if (o.interval) clearInterval(o.interval); if (o.timeout) clearTimeout(o.timeout); saveHS(9, o.score); drawAll(); playError(); } drawAll(); }, 1000); }
+      function initSub9() { let o = g[9]; o.subData = {}; o.waiting = true; if (o.timeout) clearTimeout(o.timeout); o.timeout = setTimeout(() => { if (o.waiting && o.active && !o.over) switchSub9(); }, 1500); if (o.subGame === 0) { o.subData.base = Math.floor(Math.random() * 20) + 5; o.subData.op = ['+', '-', '×'][Math.floor(Math.random() * 3)]; o.subData.n = Math.floor(Math.random() * 9) + 2; if (o.subData.op === '+') o.subData.ans = o.subData.base + o.subData.n; else if (o.subData.op === '-') o.subData.ans = o.subData.base - o.subData.n; else o.subData.ans = o.subData.base * o.subData.n; o.subData.shown = Math.random() < 0.5 ? o.subData.ans : o.subData.ans + (Math.random() < 0.5 ? 1 : -1) * (Math.floor(Math.random() * 4) + 1); if (o.subData.shown === o.subData.ans || o.subData.shown < 0) o.subData.shown = o.subData.ans + 2; o.subData.isCorrect = o.subData.shown === o.subData.ans; } else if (o.subGame === 1) { o.subData.pattern = Array(4).fill(false); o.subData.correct = Math.floor(Math.random() * 4); o.subData.pattern[o.subData.correct] = true; } else { o.subData.word = ['ĐỎ', 'XANH', 'VÀNG'][Math.floor(Math.random() * 3)]; o.subData.color = ['#d94a4a', '#3b6fb6', '#e0a82b'][Math.floor(Math.random() * 3)]; o.subData.correctColor = o.subData.color; } }
+      function switchSub9() { let o = g[9]; o.subGame = Math.floor(Math.random() * 3); o.waiting = false; if (o.timeout) clearTimeout(o.timeout); initSub9(); }
+      function drawGame9() {
+        drawParchmentBackground();
+        let o = g[9];
+        drawTopBar('Quick Switch', o.score, o.level, o.gameTimer, 8);
+        let m = W*0.06, iw = W-2*m, y = H*0.14;
+        const labels = ['Tính toán', 'Vị trí', 'Màu sắc'];
+        setFont(W*0.050, 'bold'); ctx.fillStyle = '#b8942e'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(labels[o.subGame], W/2, y);
+        y += H*0.05;
+        if (o.subGame === 0) {
+          setFont(W*0.062, 'bold'); ctx.fillStyle = '#5a7340'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.subData.base + ' ' + o.subData.op + ' ' + o.subData.n + ' = ' + o.subData.shown, W/2, y + H*0.02);
+          drawBtn(m, y + H*0.1, (iw - W*0.03)/2, H*0.08, 'Đúng', '#5a7340', '#3a4d20', '✓');
+          drawBtn(m + (iw - W*0.03)/2 + W*0.03, y + H*0.1, (iw - W*0.03)/2, H*0.08, 'Sai', '#8b3a3a', '#5a2020', '✗');
+        } else if (o.subGame === 1) {
+          setFont(W*0.038, 'bold'); ctx.fillStyle = '#6b6054'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('Ô nào sáng?', W/2, y);
+          const bs = (iw - W*0.04)/4;
+          for (let i = 0; i < 4; i++) {
+            const bx = m + i*(bs + W*0.013);
+            ctx.fillStyle = o.subData.pattern[i] ? '#e7c85e' : '#f5f0e0'; ctx.strokeStyle = '#8b7a5a'; ctx.lineWidth = 1.3;
+            roundRect(bx, y + H*0.03, bs, H*0.08, 3, true, true);
+          }
+        } else {
+          setFont(W*0.10, 'bold'); ctx.fillStyle = o.subData.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(o.subData.word, W/2, y + H*0.04);
+          setFont(W*0.038, '', 'italic'); ctx.fillStyle = '#6b6054';
+          ctx.fillText('Màu mực?', W/2, y + H*0.1);
+          const cols = ['#d94a4a', '#3b6fb6', '#e0a82b']; const bw3 = (iw - W*0.04)/3;
+          cols.forEach((c, i) => {
+            const bx = m + i*(bw3 + W*0.02);
+            ctx.fillStyle = c; ctx.strokeStyle = '#3b2f2f'; ctx.lineWidth = 1.2;
+            roundRect(bx, y + H*0.13, bw3, H*0.08, 3, true, true);
+          });
+        }
+        if (o.over) { drawOverlay(o.score); }
+        drawBackButton();
+        drawDistractions(ctx);
+      }
+      function handleGame9(x, y) {
+        let o = g[9], m = W*0.06, iw = W-2*m;
+        if (o.over) { const ow = W*0.78, oh = H*0.34, oy = (H-oh)/2; if (x > W/2 - ow*0.35 && x < W/2 + ow*0.35 && y > oy + oh*0.68 && y < oy + oh*0.92) { resetGame(9); goToGame(9); return; } return; }
+        if (!o.waiting || !o.active) return;
+        const gy6 = H*0.14 + H*0.05;
+        const handleSuccess = () => { o.score++; playSuccess(); rewardCorrect(9); o.waiting = false; if (o.timeout) clearTimeout(o.timeout); switchSub9(); };
+        const handleFailure = () => { o.over = true; o.active = false; playError(); if (o.timeout) clearTimeout(o.timeout); if (o.gameInterval) clearInterval(o.gameInterval); };
+        if (o.subGame === 0) {
+          if (x > m && x < m + (iw - W*0.03)/2 && y > gy6 + H*0.1 && y < gy6 + H*0.18) { if (o.subData.isCorrect) handleSuccess(); else handleFailure(); drawAll(); return; }
+          if (x > m + (iw - W*0.03)/2 + W*0.03 && x < m + iw && y > gy6 + H*0.1 && y < gy6 + H*0.18) { if (!o.subData.isCorrect) handleSuccess(); else handleFailure(); drawAll(); return; }
+        } else if (o.subGame === 1) {
+          const bs = (iw - W*0.04)/4;
+          for (let i = 0; i < 4; i++) { const bx = m + i*(bs + W*0.013); if (x > bx && x < bx + bs && y > gy6 + H*0.03 && y < gy6 + H*0.11) { if (i === o.subData.correct) handleSuccess(); else handleFailure(); drawAll(); return; } }
+        } else {
+          const cols = ['#d94a4a', '#3b6fb6', '#e0a82b']; const bw3 = (iw - W*0.04)/3;
+          for (let i = 0; i < 3; i++) { const bx = m + i*(bw3 + W*0.02); if (x > bx && x < bx + bw3 && y > gy6 + H*0.13 && y < gy6 + H*0.21) { if (cols[i] === o.subData.correctColor) handleSuccess(); else handleFailure(); drawAll(); return; } }
+        }
+      }
+
+      // ─── MAIN DRAW & EVENTS ─────────────────────────
+      function drawAll() {
+        ctx.save();
+        if (shakeAmount > 0.08) {
+          ctx.translate((Math.random() - 0.5) * shakeAmount, (Math.random() - 0.5) * shakeAmount);
+        }
+        if (currentView === 'menu') drawMenu();
+        else if (currentView === 'game0') drawGame0(); else if (currentView === 'game1') drawGame1();
+        else if (currentView === 'game2') drawGame2(); else if (currentView === 'game3') drawGame3();
+        else if (currentView === 'game4') drawGame4(); else if (currentView === 'game5') drawGame5();
+        else if (currentView === 'game6') drawGame6(); else if (currentView === 'game7') drawGame7();
+        else if (currentView === 'game8') drawGame8(); else if (currentView === 'game9') drawGame9();
+        ctx.restore();
+      }
+      function roundRect(x, y, w, h, r, fill = true, stroke = false) {
+        if (w <= 0 || h <= 0) return;
+        r = Math.min(r, w/2, h/2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        if (fill) ctx.fill();
+        if (stroke) ctx.stroke();
+      }
+      function setFont(size, weight = '', style = '') {
+        let fs = ''; if (style) fs += style + ' '; if (weight) fs += weight + ' ';
+        fs += Math.round(size) + 'px Arial, "Helvetica Neue", sans-serif';
+        ctx.font = fs;
+      }
+      function getPos(e) { const rect = canvas.getBoundingClientRect(); return { x: (e.clientX - rect.left) * (W / rect.width), y: (e.clientY - rect.top) * (H / rect.height) }; }
+      function handlePointerDown(e) {
+        const { x, y } = getPos(e);
+        if (currentView !== 'menu') { const bw = W*0.2, bh = Math.min(H*0.045, 30), bx = W - bw - W*0.05, by = H - bh - H*0.02; if (x > bx && x < bx + bw && y > by && y < by + bh) { goToMenu(); return; } }
+        if (currentView === 'menu') { const cols = 2, m2 = W*0.05, gap = W*0.022, sy = H*0.18, rows = 5; const cw = (W - 2*m2 - gap) / cols, ch = (H - sy - H*0.1 - (rows-1)*gap) / rows; for (let i = 0; i < 10; i++) { const col = i%cols, row = Math.floor(i/cols); const cx = m2 + col*(cw+gap), cy = sy + row*(ch+gap); if (x > cx && x < cx + cw && y > cy && y < cy + ch) { goToGame(i); return; } } return; }
+        const gi = parseInt(currentView.replace('game', ''));
+        if (gi === 0) handleGame0(x, y); else if (gi === 1) handleGame1(x, y);
+        else if (gi === 2) handleGame2(x, y); else if (gi === 3) handleGame3(x, y);
+        else if (gi === 4) handleGame4(x, y); else if (gi === 5) handleGame5(x, y);
+        else if (gi === 6) handleGame6(x, y); else if (gi === 7) handleGame7(x, y);
+        else if (gi === 8) handleGame8(x, y); else if (gi === 9) handleGame9(x, y);
+      }
+      canvas.addEventListener('mousedown', handlePointerDown);
+      canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handlePointerDown(e.touches[0]); }, { passive: false });
+      resizeCanvas();
+      function animLoop() { animFrame++; drawAll(); requestAnimationFrame(animLoop); }
+      requestAnimationFrame(animLoop);
+    })();
+  </script>
+</body>
+</html>
